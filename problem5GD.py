@@ -1,5 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import time
+import warnings
+from sklearn.model_selection import train_test_split
+from matplotlib.gridspec import GridSpec
 
 def tanh(x):
     return np.tanh(x)
@@ -433,52 +437,154 @@ class NeuralNetwork:
         }
 
 
-# Crear datos de entrenamiento
-# Se generan 100 valores entre 0 y 2𝜋, y el arreglo se convierte en una columna
-x_vals = np.linspace(0, 2 * np.pi, 100).reshape(-1, 1)
+warnings.filterwarnings("ignore", category=UserWarning)
 
-# Calcular el seno de los valores generados
-y_vals = np.sin(x_vals)
+# Generate data with more range for better testing
+x = np.linspace(0, 4 * np.pi, 1000)  # Expanded range to test generalization
+y = np.sin(x)
 
-# Convierte los vectores de entrenamiento a forma horizontal, donde cada columna es un ejemplo
-# (1, 100)
-x_train = x_vals.T  
-y_train = y_vals.T  
+# Split into training and validation sets
+x_train, x_val, y_train, y_val = train_test_split(x, y, test_size=0.2, random_state=42)
 
-# Convertir a lista de tuplas [(x1, y1), (x2, y2), ...]
-training_data = [(x_train[:, i:i+1], y_train[:, i:i+1]) for i in range(x_train.shape[1])]
+# Prepare data in the format needed by the neural network
+training_data = [
+    (np.array([i]).reshape(1, 1), np.array([j]).reshape(1, 1)) 
+    for i, j in zip(x_train, y_train)
+]
+validation_data = [
+    (np.array([i]).reshape(1, 1), np.array([j]).reshape(1, 1)) 
+    for i, j in zip(x_val, y_val)
+]
 
-# Creación de la red neuronal
-net = NeuralNetwork(layer_sizes=[1, 10, 1], activations=['tanh', 'tanh'])
+# Feature engineering: Add sin and cos of the input as features
+# This helps the network learn periodic functions much faster
+training_data_enhanced = [
+    (np.array([[x[0][0], np.sin(x[0][0]), np.cos(x[0][0])]]).T, y) 
+    for x, y in training_data
+]
+validation_data_enhanced = [
+    (np.array([[x[0][0], np.sin(x[0][0]), np.cos(x[0][0])]]).T, y) 
+    for x, y in validation_data
+]
 
+# Optimized network architecture for sine wave approximation
+nn = NeuralNetwork(
+    layer_sizes=[3, 32, 16, 1],  # Smaller network with engineered features
+    activations=['tanh', 'tanh', 'tanh'],  # Tanh is ideal for sine waves
+    dropout_rates=[0.0, 0.0, 0]  # No dropout needed with proper features
+)
 
-# Entrenar la red neuronal
-history = net.train(
-    training_data=training_data,
-    epochs=1000,
-    mini_batch_size=10,
-    learning_rate=0.01,
-    decay=0.0,
-    schedule_type="none",
+# Minimal L2 regularization
+nn.lambd = 0.0
+
+# Compute initial predictions for visualization
+nn.toggle_training(False)
+initial_predictions = []
+for i in x:
+    # Create the feature-engineered input
+    enhanced_input = np.array([[i, np.sin(i), np.cos(i)]]).T
+    initial_predictions.append(nn.feedforward(enhanced_input)[0][0])
+initial_predictions = np.array(initial_predictions)
+
+# Create figure with better layout
+plt.figure(figsize=(15, 12))
+gs = GridSpec(3, 2)
+
+# Plot 1: Initial predictions
+ax1 = plt.subplot(gs[0, :])
+ax1.plot(x, y, 'b-', label="True Sin(x)", linewidth=2, alpha=0.7)
+ax1.plot(x, initial_predictions, 'r--', label="Initial NN Predictions", linewidth=2, alpha=0.7)
+ax1.set_title("Neural Network Predictions Before Training", fontsize=14, fontweight='bold')
+ax1.set_xlabel("Input (x)", fontsize=12)
+ax1.set_ylabel("Output (Sin(x))", fontsize=12)
+ax1.legend(fontsize=12)
+ax1.grid(True, alpha=0.3)
+
+# Train the network with optimized hyperparameters
+print("Training neural network...")
+start_time = time.time()
+
+history = nn.train(
+    training_data=training_data_enhanced,
+    epochs=200,  # Fewer epochs needed with better features
+    mini_batch_size=32,  # Smaller batches for more frequent updates
+    learning_rate=0.01,  # Higher learning rate is fine with proper initialization
+    decay=0.005,  # Slower decay
+    schedule_type="exp_decay",  # Exponential decay for smoother reduction
+    validation_data=validation_data_enhanced,
+    early_stopping_patience=20,  # Earlier stopping is fine
     verbose=True
 )
 
+training_time = time.time() - start_time
+print(f"Training completed in {training_time:.2f} seconds")
 
+# Get final predictions
+nn.toggle_training(False)
+trained_predictions = []
+for i in x:
+    # Create the feature-engineered input
+    enhanced_input = np.array([[i, np.sin(i), np.cos(i)]]).T
+    trained_predictions.append(nn.feedforward(enhanced_input)[0][0])
+trained_predictions = np.array(trained_predictions)
 
-# Obtener predicciones de la red neuronal
-preds = [net.feedforward(x.reshape(-1, 1)) for x in x_vals]
-preds = np.array(preds).reshape(-1)
+# Plot 2: Final predictions
+ax2 = plt.subplot(gs[1, :])
+ax2.plot(x, y, 'b-', label="True Sin(x)", linewidth=2, alpha=0.7)
+ax2.plot(x, trained_predictions, 'g-', label="Trained NN Predictions", linewidth=2, alpha=0.7)
+ax2.set_title("Neural Network Predictions After Training", fontsize=14, fontweight='bold')
+ax2.set_xlabel("Input (x)", fontsize=12)
+ax2.set_ylabel("Output (Sin(x))", fontsize=12)
+ax2.legend(fontsize=12)
+ax2.grid(True, alpha=0.3)
 
-plt.plot(x_vals, y_vals, label='sin(x)')
-plt.plot(x_vals, preds, label='NN prediction', linestyle='--')
-plt.legend()
-plt.title("Aproximación con GD básico")
+# Compute error metrics
+mse = np.mean((trained_predictions - y) ** 2)
+mae = np.mean(np.abs(trained_predictions - y))
+r2 = 1 - np.sum((y - trained_predictions) ** 2) / np.sum((y - np.mean(y)) ** 2)
+
+# Add error metrics as text
+metrics_text = f"MSE: {mse:.6f}\nMAE: {mae:.6f}\nR²: {r2:.6f}\nTraining Time: {training_time:.2f}s"
+ax2.text(0.02, 0.15, metrics_text, transform=ax2.transAxes, 
+         fontsize=12, bbox=dict(facecolor='white', alpha=0.7))
+
+# Plot 3: Training and validation loss
+ax3 = plt.subplot(gs[2, 0])
+epochs = range(1, len(history['loss']) + 1)
+ax3.plot(epochs, history['loss'], 'b-', label='Training Loss', linewidth=2)
+ax3.plot(epochs, history['val_loss'], 'r-', label='Validation Loss', linewidth=2)
+ax3.set_title("Loss During Training", fontsize=14, fontweight='bold')
+ax3.set_xlabel("Epoch", fontsize=12)
+ax3.set_ylabel("Loss (MSE)", fontsize=12)
+ax3.set_yscale('log')  # Log scale for better visualization
+ax3.legend(fontsize=12)
+ax3.grid(True, alpha=0.3)
+
+# Plot 4: Error analysis
+ax4 = plt.subplot(gs[2, 1])
+error = trained_predictions - y
+ax4.scatter(x, error, color='purple', alpha=0.5)
+ax4.axhline(y=0, color='r', linestyle='-', alpha=0.3)
+ax4.set_title("Prediction Error Analysis", fontsize=14, fontweight='bold')
+ax4.set_xlabel("Input (x)", fontsize=12)
+ax4.set_ylabel("Error (Predicted - Actual)", fontsize=12)
+ax4.grid(True, alpha=0.3)
+
+# Improve layout
+plt.tight_layout()
+plt.savefig('neural_network_sin_approximation.png', dpi=300, bbox_inches='tight')
 plt.show()
 
-
-
-plt.plot(history['loss'])
-plt.title("Loss durante el entrenamiento")
-plt.xlabel("Epochs")
-plt.ylabel("MSE")
+# Additional visualization: Phase plot to verify the learned function behaves correctly
+plt.figure(figsize=(10, 8))
+plt.title("Phase Plot: sin(x) vs. Neural Network Prediction", fontsize=14, fontweight='bold')
+plt.scatter(y, trained_predictions, alpha=0.5, color='blue')
+plt.plot([-1.2, 1.2], [-1.2, 1.2], 'r--', linewidth=2)  # Perfect prediction line
+plt.xlabel("True value (sin(x))", fontsize=12)
+plt.ylabel("Predicted value", fontsize=12)
+plt.grid(True, alpha=0.3)
+plt.axis('equal')
+plt.xlim(-1.2, 1.2)
+plt.ylim(-1.2, 1.2)
+plt.savefig('phase_plot.png', dpi=300, bbox_inches='tight')
 plt.show()
