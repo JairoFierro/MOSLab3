@@ -66,3 +66,99 @@ for alpha, traj in trajectories.items():
 
 
 #PARTE 2
+import numpy as np
+import matplotlib.pyplot as plt
+import time
+
+# 4.1. Calcular analíticamente el gradiente y la matriz Hessiana de la función propuesta.
+# Definimos la función objetivo
+def f(x, y):
+    return (x - 2)**2 * (y + 2)**2 + (x + 1)**2 + (y - 1)**2
+
+# Calculamos el gradiente
+def gradient(x, y):
+    df_dx = 2 * (x - 2) * (y + 2)**2 + 2 * (x + 1)
+    df_dy = 2 * (y - 1) + 2 * (x - 2)**2 * (y + 2)
+    return np.array([df_dx, df_dy])
+
+# Calculamos la matriz Hessiana
+def hessian(x, y):
+    d2f_dx2 = 2 * (y + 2)**2 + 2
+    d2f_dy2 = 2 + 2 * (x - 2)**2
+    d2f_dxdy = 4 * (x - 2) * (y + 2)
+    return np.array([[d2f_dx2, d2f_dxdy], [d2f_dxdy, d2f_dy2]])
+
+# 4.2. Implementar ambos algoritmos (Newton-Raphson y Gradiente Descendente) para la misma función.
+# Método de Gradiente Descendente
+def gradient_descent(x0, y0, alpha=0.01, tol=1e-6, max_iter=1000):
+    x, y = x0, y0
+    trajectory = [(x, y)]
+    start_time = time.time()
+    for i in range(max_iter):
+        grad = gradient(x, y)
+        x -= alpha * grad[0]
+        y -= alpha * grad[1]
+        trajectory.append((x, y))
+        if np.linalg.norm(grad) < tol:
+            break
+    exec_time = time.time() - start_time
+    return np.array(trajectory), i+1, exec_time
+
+# Método de Newton-Raphson
+def newton_raphson(x0, y0, tol=1e-6, max_iter=1000):
+    x, y = x0, y0
+    trajectory = [(x, y)]
+    start_time = time.time()
+    for i in range(max_iter):
+        grad = gradient(x, y)
+        hess = hessian(x, y)
+        delta = np.linalg.solve(hess, -grad)
+        x += delta[0]
+        y += delta[1]
+        trajectory.append((x, y))
+        if np.linalg.norm(grad) < tol:
+            break
+    exec_time = time.time() - start_time
+    return np.array(trajectory), i+1, exec_time
+
+# 4.3. Utilizar el mismo punto inicial (x0, y0) = (-2, -3) para ambos métodos.
+x0, y0 = -2, -3
+
+# 4.4. Experimentar con diferentes valores del parámetro de paso α y determinar el valor óptimo.
+# Ejecutamos los métodos
+traj_gd, iter_gd, time_gd = gradient_descent(x0, y0, alpha=0.005)
+traj_nr, iter_nr, time_nr = newton_raphson(x0, y0)
+
+# 4.5. Graficar en una misma figura las trayectorias de convergencia de ambos métodos.
+x_vals = np.linspace(-3, 3, 100)
+y_vals = np.linspace(-4, 3, 100)
+X, Y = np.meshgrid(x_vals, y_vals)
+Z = f(X, Y)
+
+plt.figure(figsize=(10, 6))
+plt.contour(X, Y, Z, levels=30, cmap='viridis')
+plt.plot(traj_gd[:, 0], traj_gd[:, 1], 'r-o', markersize=3, label='Gradiente Descendente')
+plt.plot(traj_nr[:, 0], traj_nr[:, 1], 'b-s', markersize=3, label='Newton-Raphson')
+plt.scatter([x0], [y0], c='black', marker='x', s=100, label='Punto Inicial')
+plt.legend()
+plt.title('Comparación de Trayectorias de Convergencia')
+plt.xlabel('x')
+plt.ylabel('y')
+plt.show()
+
+# 4.6. Realizar un análisis comparativo
+print("\nAnálisis Comparativo:")
+print(f"Número de iteraciones hasta la convergencia: GD = {iter_gd}, NR = {iter_nr}")
+print(f"Tiempo de ejecución: GD = {time_gd:.6f}s, NR = {time_nr:.6f}s")
+print(f"Precisión final del resultado (gradiente norm): GD = {np.linalg.norm(gradient(traj_gd[-1, 0], traj_gd[-1, 1])):.6e}, NR = {np.linalg.norm(gradient(traj_nr[-1, 0], traj_nr[-1, 1])):.6e}")
+
+# 4.7. Concluir cuál método es más adecuado para esta función específica.
+# En este caso, Newton-Raphson tiende a converger en menos iteraciones pero tiene un mayor costo computacional por iteración.
+# Gradiente Descendente es más simple y robusto frente a cambios en el paso α, aunque puede requerir más iteraciones.
+
+# 4.8. Presentar una tabla comparativa de ventajas y desventajas de cada método.
+print("\nTabla Comparativa:")
+print("Método | Iteraciones | Tiempo de Ejecución | Precisión Final")
+print("-------------------------------------------------------------")
+print(f"Gradiente Descendente | {iter_gd} | {time_gd:.6f}s | {np.linalg.norm(gradient(traj_gd[-1, 0], traj_gd[-1, 1])):.6e}")
+print(f"Newton-Raphson | {iter_nr} | {time_nr:.6f}s | {np.linalg.norm(gradient(traj_nr[-1, 0], traj_nr[-1, 1])):.6e}")
